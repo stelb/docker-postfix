@@ -105,7 +105,11 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: |
             BASE_IMAGE=alpine:latest
-
+      
+      - name: Run chart-releaser
+        uses: helm/chart-releaser-action@v1.4.1
+        env:
+          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
 
 #      - name: Build and push Alpine
 #        uses: docker/build-push-action@v3
