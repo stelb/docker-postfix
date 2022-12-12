@@ -1,13 +1,13 @@
 apiVersion: v2
 name: mail
 description: An outgoing SMTP mail relay for your applications in Kubernetes cluster
-icon: https://bokysan.github.io/docker-postfix/postfix.png
-home: https://github.com/bokysan/docker-postfix
+icon: https://stelb.github.io/docker-postfix/postfix.png
+home: https://github.com/stelb/docker-postfix
 sources:
-  - https://github.com/bokysan/docker-postfix
+  - https://github.com/stelb/docker-postfix
 maintainers:
-  - name: Bokysan
-    url: https://github.com/bokysan
+  - name: stelb
+    url: https://github.com/stelb
 
 # A chart can be either an 'application' or a 'library' chart.
 #
