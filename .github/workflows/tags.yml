@@ -4,45 +4,51 @@ on:
   push:
     tags: [ 'v*.*.*' ]
 
+env:
+  # Use docker.io for Docker Hub if empty
+  REGISTRY: ghcr.io
+  # github.repository as <account>/<repo>
+  IMAGE_NAME: ${{ github.repository_owner }}/postfix
+
 jobs:
-  Unit_Tests:
-    runs-on: ubuntu-latest
-    steps:
-      # Checkout
-      - name: Checkout
-        uses: actions/checkout@v3
+  # Unit_Tests:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     # Checkout
+  #     - name: Checkout
+  #       uses: actions/checkout@v3
 
-      - uses: ./.github/actions/unit-tests
+  #     - uses: ./.github/actions/unit-tests
 
-  Integration_Tests:
-    runs-on: ubuntu-latest
-    steps:
-      # Checkout
-      - name: Checkout
-        uses: actions/checkout@v3
+  # Integration_Tests:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     # Checkout
+  #     - name: Checkout
+  #       uses: actions/checkout@v3
 
-      - uses: ./.github/actions/integration-tests
-        with:
-          XOAUTH2_RELAYHOST_USERNAME: ${{ secrets.XOAUTH2_RELAYHOST_USERNAME }}
-          XOAUTH2_CLIENT_ID: ${{ secrets.XOAUTH2_CLIENT_ID }}
-          XOAUTH2_SECRET: ${{ secrets.XOAUTH2_SECRET }}
-          XOAUTH2_INITIAL_REFRESH_TOKEN: ${{ secrets.XOAUTH2_INITIAL_REFRESH_TOKEN }}
+  #     - uses: ./.github/actions/integration-tests
+  #       with:
+  #         XOAUTH2_RELAYHOST_USERNAME: ${{ secrets.XOAUTH2_RELAYHOST_USERNAME }}
+  #         XOAUTH2_CLIENT_ID: ${{ secrets.XOAUTH2_CLIENT_ID }}
+  #         XOAUTH2_SECRET: ${{ secrets.XOAUTH2_SECRET }}
+  #         XOAUTH2_INITIAL_REFRESH_TOKEN: ${{ secrets.XOAUTH2_INITIAL_REFRESH_TOKEN }}
 
-  Helm_chart_Tests:
-    runs-on: ubuntu-latest
-    steps:
-      # Checkout
-      - name: Checkout
-        uses: actions/checkout@v3
+  # Helm_chart_Tests:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     # Checkout
+  #     - name: Checkout
+  #       uses: actions/checkout@v3
 
-      - uses: ./.github/actions/helm-chart-tests
+  #     - uses: ./.github/actions/helm-chart-tests
 
   Build_Alpine:
     runs-on: ubuntu-latest
-    needs:
-      - Unit_Tests
-      - Integration_Tests
-      - Helm_chart_Tests
+    # needs:
+    #   - Unit_Tests
+    #   - Integration_Tests
+    #   - Helm_chart_Tests
     steps:
       # Checkout
       - name: Checkout
@@ -53,10 +59,18 @@ jobs:
       # Buildkit setup
       - uses: ./.github/actions/buildx-setup
 
-      # Docker hub login
-      - uses: ./.github/actions/docker-hub-login
+      # # Docker hub login
+      # - uses: ./.github/actions/docker-hub-login
+      #   with:
+      #     DOCKER_ACCESS_TOKEN: '${{ secrets.DOCKER_ACCESS_TOKEN }}'
+
+      - name: Log into registry ${{ env.REGISTRY }}
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@f75d088332b07a08afadf6ac53c74509b9453f12
         with:
-          DOCKER_ACCESS_TOKEN: '${{ secrets.DOCKER_ACCESS_TOKEN }}'
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Cache Docker layers
         uses: actions/cache@v3
@@ -71,132 +85,156 @@ jobs:
         run: |
           update-binfmts --enable
 
-      - name: Build and push Alpine
-        uses: docker/build-push-action@v3
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@314ddf6d4a82333bf1bc7630399df41bf68eba09
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+      # Build and push Docker image with Buildx (don't push on PR)
+      # https://github.com/docker/build-push-action
+      - name: Build and push Docker image
+        id: build-and-push
+        uses: docker/build-push-action@175d02bffea74695e96b351069ac938b338802f9
         with:
           context: .
-          push: true
-          tags: |
-            boky/postfix:${{ env.RELEASE_VERSION }}
-            boky/postfix:${{ env.RELEASE_VERSION }}-alpine
-          # linux/s390x: "rsyslog (no such package)"
-          # Latest Alpine does not have all packages for 386 any more :-(
-          platforms: "linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64,linux/ppc64le"
-          cache-from: type=local,src=/tmp/.buildx-cache/alpine
-          cache-to: type=local,dest=/tmp/.buildx-cache-new/alpine
+          platforms: linux/arm/v7,linux/amd64,linux/arm64,linux/ppc64le
+          #,linux/s390x
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
           build-args: |
             BASE_IMAGE=alpine:latest
 
-      - name: Move cache
-        run: |
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
-  Build_Ubuntu:
-    runs-on: ubuntu-latest
-    needs:
-      - Unit_Tests
-      - Integration_Tests
-      - Helm_chart_Tests
-    steps:
-      # Checkout
-      - name: Checkout
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
+  #     - name: Build and push Alpine
+  #       uses: docker/build-push-action@v3
+  #       with:
+  #         context: .
+  #         push: true
+  #         tags: |
+  #           boky/postfix:${{ env.RELEASE_VERSION }}
+  #           boky/postfix:${{ env.RELEASE_VERSION }}-alpine
+  #         # linux/s390x: "rsyslog (no such package)"
+  #         # Latest Alpine does not have all packages for 386 any more :-(
+  #         platforms: "linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64,linux/ppc64le"
+  #         cache-from: type=local,src=/tmp/.buildx-cache/alpine
+  #         cache-to: type=local,dest=/tmp/.buildx-cache-new/alpine
+  #         build-args: |
+  #           BASE_IMAGE=alpine:latest
 
-      # Buildkit setup
-      - uses: ./.github/actions/buildx-setup
+  #     - name: Move cache
+  #       run: |
+  #         rm -rf /tmp/.buildx-cache
+  #         mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
-      # Docker hub login
-      - uses: ./.github/actions/docker-hub-login
-        with:
-          DOCKER_ACCESS_TOKEN: '${{ secrets.DOCKER_ACCESS_TOKEN }}'
+  # Build_Ubuntu:
+  #   runs-on: ubuntu-latest
+  #   needs:
+  #     - Unit_Tests
+  #     - Integration_Tests
+  #     - Helm_chart_Tests
+  #   steps:
+  #     # Checkout
+  #     - name: Checkout
+  #       uses: actions/checkout@v3
+  #       with:
+  #         fetch-depth: 0
 
-      - name: Cache Docker layers
-        uses: actions/cache@v3
-        with:
-          path: /tmp/.buildx-cache
-          #key: ${{ runner.os }}-buildx-${{ hashFiles('**/Dockerfile') }}
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
+  #     # Buildkit setup
+  #     - uses: ./.github/actions/buildx-setup
 
-      - name: Build and push Ubuntu
-        uses: docker/build-push-action@v3
-        with:
-          context: .
-          push: true
-          tags: boky/postfix:${{ env.RELEASE_VERSION }}-ubuntu
-          platforms: "linux/arm/v7,linux/amd64,linux/arm64,linux/ppc64le,linux/s390x"
-          cache-from: type=local,src=/tmp/.buildx-cache/ubuntu
-          cache-to: type=local,dest=/tmp/.buildx-cache-new/ubuntu
-          build-args: |
-            BASE_IMAGE=ubuntu:impish
+  #     # Docker hub login
+  #     - uses: ./.github/actions/docker-hub-login
+  #       with:
+  #         DOCKER_ACCESS_TOKEN: '${{ secrets.DOCKER_ACCESS_TOKEN }}'
 
-      - name: Move cache
-        run: |
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+  #     - name: Cache Docker layers
+  #       uses: actions/cache@v3
+  #       with:
+  #         path: /tmp/.buildx-cache
+  #         #key: ${{ runner.os }}-buildx-${{ hashFiles('**/Dockerfile') }}
+  #         key: ${{ runner.os }}-buildx-${{ github.sha }}
+  #         restore-keys: |
+  #           ${{ runner.os }}-buildx-
 
-  Release:
-    runs-on: ubuntu-latest
-    needs:
-      - Unit_Tests
-      - Integration_Tests
-      - Helm_chart_Tests
-      - Build_Alpine
-      - Build_Ubuntu
+  #     - name: Build and push Ubuntu
+  #       uses: docker/build-push-action@v3
+  #       with:
+  #         context: .
+  #         push: true
+  #         tags: boky/postfix:${{ env.RELEASE_VERSION }}-ubuntu
+  #         platforms: "linux/arm/v7,linux/amd64,linux/arm64,linux/ppc64le,linux/s390x"
+  #         cache-from: type=local,src=/tmp/.buildx-cache/ubuntu
+  #         cache-to: type=local,dest=/tmp/.buildx-cache-new/ubuntu
+  #         build-args: |
+  #           BASE_IMAGE=ubuntu:impish
 
-    steps:
-      # Checkout
-      - name: Checkout
-        uses: actions/checkout@v3
-        with:
-          fetch-depth: 0
+  #     - name: Move cache
+  #       run: |
+  #         rm -rf /tmp/.buildx-cache
+  #         mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
-      - name: Get release version
-        id: version_number
-        shell: bash
-        run: |
-          echo "RELEASE_VERSION=${GITHUB_REF:10}" >> $GITHUB_ENV
-          echo "::set-output name=RELEASE_VERSION::${GITHUB_REF:10}"
+  # Release:
+  #   runs-on: ubuntu-latest
+  #   needs:
+  #     - Unit_Tests
+  #     - Integration_Tests
+  #     - Helm_chart_Tests
+  #     - Build_Alpine
+  #     - Build_Ubuntu
 
-      - name: Checkout gh-pages
-        uses: actions/checkout@v3
-        with:
-          ref: "gh-pages"
-          path: "gh-pages"
-          fetch-depth: 1
+  #   steps:
+  #     # Checkout
+  #     - name: Checkout
+  #       uses: actions/checkout@v3
+  #       with:
+  #         fetch-depth: 0
 
-      - name: Copy `README.md` and `LICENCE` into the helm chart
-        id: readme_and_licence
-        shell: bash
-        run: cp README.md LICENSE helm/mail/
+  #     - name: Get release version
+  #       id: version_number
+  #       shell: bash
+  #       run: |
+  #         echo "RELEASE_VERSION=${GITHUB_REF:10}" >> $GITHUB_ENV
+  #         echo "::set-output name=RELEASE_VERSION::${GITHUB_REF:10}"
 
-      - name: Changelog
-        uses: Bullrich/generate-release-changelog@master
-        id: Changelog
-        env:
-          REPO: ${{ github.repository }}
-      # TODO: Include the changelog in Chart.yml as annotations.artifacthub.io/changes
-      # See more here: https://artifacthub.io/docs/topics/annotations/helm/#supported-annotations
+  #     - name: Checkout gh-pages
+  #       uses: actions/checkout@v3
+  #       with:
+  #         ref: "gh-pages"
+  #         path: "gh-pages"
+  #         fetch-depth: 1
 
-      - name: Package helm chart
-        uses: WyriHaximus/github-action-helm3@v2
-        with:
-          exec: helm package --app-version $RELEASE_VERSION --version $RELEASE_VERSION --destination ./gh-pages helm/mail
+  #     - name: Copy `README.md` and `LICENCE` into the helm chart
+  #       id: readme_and_licence
+  #       shell: bash
+  #       run: cp README.md LICENSE helm/mail/
 
-      - name: Create helm chart index
-        uses: WyriHaximus/github-action-helm3@v2
-        with:
-          exec: cd gh-pages && rm -rf .git && helm repo index . --url https://bokysan.github.io/docker-postfix
-      - name: Upload gh-pages
-        uses: peaceiris/actions-gh-pages@v3
-        with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
-          publish_dir: ./gh-pages
-          tag_name: gh-pages-${{ steps.version_number.outputs.RELEASE_VERSION }}
+  #     - name: Changelog
+  #       uses: Bullrich/generate-release-changelog@master
+  #       id: Changelog
+  #       env:
+  #         REPO: ${{ github.repository }}
+  #     # TODO: Include the changelog in Chart.yml as annotations.artifacthub.io/changes
+  #     # See more here: https://artifacthub.io/docs/topics/annotations/helm/#supported-annotations
+
+  #     - name: Package helm chart
+  #       uses: WyriHaximus/github-action-helm3@v2
+  #       with:
+  #         exec: helm package --app-version $RELEASE_VERSION --version $RELEASE_VERSION --destination ./gh-pages helm/mail
+
+  #     - name: Create helm chart index
+  #       uses: WyriHaximus/github-action-helm3@v2
+  #       with:
+  #         exec: cd gh-pages && rm -rf .git && helm repo index . --url https://bokysan.github.io/docker-postfix
+  #     - name: Upload gh-pages
+  #       uses: peaceiris/actions-gh-pages@v3
+  #       with:
+  #         github_token: ${{ secrets.GITHUB_TOKEN }}
+  #         publish_dir: ./gh-pages
+  #         tag_name: gh-pages-${{ steps.version_number.outputs.RELEASE_VERSION }}
 
       - name: Create Release
         id: create_release
@@ -210,3 +248,8 @@ jobs:
             ${{ steps.Changelog.outputs.changelog }}
           draft: false
           prerelease: false
+
+      - name: Run chart-releaser
+        uses: helm/chart-releaser-action@v1.4.1
+        env:
+          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
