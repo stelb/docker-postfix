@@ -4,45 +4,52 @@ on:
   push:
     branches: [ 'master' ]
 
+env:
+  # Use docker.io for Docker Hub if empty
+  REGISTRY: ghcr.io
+  # github.repository as <account>/<repo>
+  IMAGE_NAME: ${{ github.repository_owner }}/postfix
+
+
 jobs:
-  Unit_Tests:
-    runs-on: ubuntu-latest
-    steps:
-      # Checkout
-      - name: Checkout
-        uses: actions/checkout@v3
+  # Unit_Tests:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     # Checkout
+  #     - name: Checkout
+  #       uses: actions/checkout@v3
 
-      - uses: ./.github/actions/unit-tests
+  #     - uses: ./.github/actions/unit-tests
 
-  Integration_Tests:
-    runs-on: ubuntu-latest
-    steps:
-      # Checkout
-      - name: Checkout
-        uses: actions/checkout@v3
+  # Integration_Tests:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     # Checkout
+  #     - name: Checkout
+  #       uses: actions/checkout@v3
 
-      - uses: ./.github/actions/integration-tests
-        with:
-          XOAUTH2_RELAYHOST_USERNAME: ${{ secrets.XOAUTH2_RELAYHOST_USERNAME }}
-          XOAUTH2_CLIENT_ID: ${{ secrets.XOAUTH2_CLIENT_ID }}
-          XOAUTH2_SECRET: ${{ secrets.XOAUTH2_SECRET }}
-          XOAUTH2_INITIAL_REFRESH_TOKEN: ${{ secrets.XOAUTH2_INITIAL_REFRESH_TOKEN }}
+  #     - uses: ./.github/actions/integration-tests
+  #       with:
+  #         XOAUTH2_RELAYHOST_USERNAME: ${{ secrets.XOAUTH2_RELAYHOST_USERNAME }}
+  #         XOAUTH2_CLIENT_ID: ${{ secrets.XOAUTH2_CLIENT_ID }}
+  #         XOAUTH2_SECRET: ${{ secrets.XOAUTH2_SECRET }}
+  #         XOAUTH2_INITIAL_REFRESH_TOKEN: ${{ secrets.XOAUTH2_INITIAL_REFRESH_TOKEN }}
 
-  Helm_chart_Tests:
-    runs-on: ubuntu-latest
-    steps:
-      # Checkout
-      - name: Checkout
-        uses: actions/checkout@v3
+  # Helm_chart_Tests:
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     # Checkout
+  #     - name: Checkout
+  #       uses: actions/checkout@v3
 
-      - uses: ./.github/actions/helm-chart-tests
+  #     - uses: ./.github/actions/helm-chart-tests
 
   Build_Alpine:
     runs-on: ubuntu-latest
     needs:
-      - Unit_Tests
-      - Integration_Tests
-      - Helm_chart_Tests
+#      - Unit_Tests
+#      - Integration_Tests
+#      - Helm_chart_Tests
     steps:
       # Checkout
       - name: Checkout
@@ -52,86 +59,114 @@ jobs:
       - uses: ./.github/actions/buildx-setup
 
       # Docker hub login
-      - uses: ./.github/actions/docker-hub-login
+#      - uses: ./.github/actions/docker-hub-login
+#        with:
+#          DOCKER_ACCESS_TOKEN: '${{ secrets.DOCKER_ACCESS_TOKEN }}'
+      - name: Log into registry ${{ env.REGISTRY }}
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@f75d088332b07a08afadf6ac53c74509b9453f12
         with:
-          DOCKER_ACCESS_TOKEN: '${{ secrets.DOCKER_ACCESS_TOKEN }}'
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Cache Docker layers
-        uses: actions/cache@v3
-        with:
-          path: /tmp/.buildx-cache
-          #key: ${{ runner.os }}-buildx-${{ hashFiles('**/Dockerfile') }}
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
+#      - name: Cache Docker layers
+#        uses: actions/cache@v3
+#        with:
+#          path: /tmp/.buildx-cache
+#          #key: ${{ runner.os }}-buildx-${{ hashFiles('**/Dockerfile') }}
+#          key: ${{ runner.os }}-buildx-${{ github.sha }}
+#          restore-keys: |
+#            ${{ runner.os }}-buildx-
 
       - name: Fix issue with building Alpine # See https://gitlab.alpinelinux.org/alpine/aports/-/issues/12406
         run: |
           update-binfmts --enable
 
-      - name: Build and push Alpine
-        uses: docker/build-push-action@v3
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@314ddf6d4a82333bf1bc7630399df41bf68eba09
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+
+      # Build and push Docker image with Buildx (don't push on PR)
+      # https://github.com/docker/build-push-action
+      - name: Build and push Docker image
+        id: build-and-push
+        uses: docker/build-push-action@175d02bffea74695e96b351069ac938b338802f9
         with:
           context: .
-          push: true
-          tags: |
-            boky/postfix:latest
-            boky/postfix:latest-alpine
-          # linux/s390x: "rsyslog (no such package)"
-          # Latest Alpine does not have all the packages for 386 anymore. :-(
-          platforms: "linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64,linux/ppc64le"
-          cache-from: type=local,src=/tmp/.buildx-cache/alpine
-          cache-to: type=local,dest=/tmp/.buildx-cache-new/alpine
-          build-args: |
-            BASE_IMAGE=alpine:latest
+          platforms: linux/arm/v7,linux/amd64,linux/arm64,linux/ppc64le,linux/s390x
+          push: ${{ github.event_name != 'pull_request' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Move cache
-        run: |
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
-  Build_Ubuntu:
-    runs-on: ubuntu-latest
-    needs:
-      - Unit_Tests
-      - Integration_Tests
-      - Helm_chart_Tests
-    steps:
-      # Checkout
-      - name: Checkout
-        uses: actions/checkout@v3
+#      - name: Build and push Alpine
+#        uses: docker/build-push-action@v3
+#        with:
+#          context: .
+#          push: true
+#          tags: |
+#            boky/postfix:latest
+#            boky/postfix:latest-alpine
+#          # linux/s390x: "rsyslog (no such package)"
+#          # Latest Alpine does not have all the packages for 386 anymore. :-(
+#          platforms: "linux/amd64,linux/arm/v6,linux/arm/v7,linux/arm64,linux/ppc64le"
+#          cache-from: type=local,src=/tmp/.buildx-cache/alpine
+#          cache-to: type=local,dest=/tmp/.buildx-cache-new/alpine
+#          build-args: |
+#            BASE_IMAGE=alpine:latest
 
-      # Buildkit setup
-      - uses: ./.github/actions/buildx-setup
+#      - name: Move cache
+#        run: |
+#          rm -rf /tmp/.buildx-cache
+#          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
-      # Docker hub login
-      - uses: ./.github/actions/docker-hub-login
-        with:
-          DOCKER_ACCESS_TOKEN: '${{ secrets.DOCKER_ACCESS_TOKEN }}'
+  # Build_Ubuntu:
+  #   runs-on: ubuntu-latest
+  #   needs:
+  #     - Unit_Tests
+  #     - Integration_Tests
+  #     - Helm_chart_Tests
+  #   steps:
+  #     # Checkout
+  #     - name: Checkout
+  #       uses: actions/checkout@v3
 
-      - name: Cache Docker layers
-        uses: actions/cache@v3
-        with:
-          path: /tmp/.buildx-cache
-          #key: ${{ runner.os }}-buildx-${{ hashFiles('**/Dockerfile') }}
-          key: ${{ runner.os }}-buildx-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-buildx-
+  #     # Buildkit setup
+  #     - uses: ./.github/actions/buildx-setup
 
-      - name: Build and push Ubuntu
-        uses: docker/build-push-action@v3
-        with:
-          context: .
-          push: true
-          tags: boky/postfix:latest-ubuntu
-          platforms: "linux/arm/v7,linux/amd64,linux/arm64,linux/ppc64le,linux/s390x"
-          cache-from: type=local,src=/tmp/.buildx-cache/ubuntu
-          cache-to: type=local,dest=/tmp/.buildx-cache-new/ubuntu
-          build-args: |
-            BASE_IMAGE=ubuntu:focal
+  #     # Docker hub login
+  #     - uses: ./.github/actions/docker-hub-login
+  #       with:
+  #         DOCKER_ACCESS_TOKEN: '${{ secrets.DOCKER_ACCESS_TOKEN }}'
 
-      - name: Move cache
-        run: |
-          rm -rf /tmp/.buildx-cache
-          mv /tmp/.buildx-cache-new /tmp/.buildx-cache
+  #     - name: Cache Docker layers
+  #       uses: actions/cache@v3
+  #       with:
+  #         path: /tmp/.buildx-cache
+  #         #key: ${{ runner.os }}-buildx-${{ hashFiles('**/Dockerfile') }}
+  #         key: ${{ runner.os }}-buildx-${{ github.sha }}
+  #         restore-keys: |
+  #           ${{ runner.os }}-buildx-
+
+  #     - name: Build and push Ubuntu
+  #       uses: docker/build-push-action@v3
+  #       with:
+  #         context: .
+  #         push: true
+  #         tags: boky/postfix:latest-ubuntu
+  #         platforms: "linux/arm/v7,linux/amd64,linux/arm64,linux/ppc64le,linux/s390x"
+  #         cache-from: type=local,src=/tmp/.buildx-cache/ubuntu
+  #         cache-to: type=local,dest=/tmp/.buildx-cache-new/ubuntu
+  #         build-args: |
+  #           BASE_IMAGE=ubuntu:focal
+
+  #     - name: Move cache
+  #       run: |
+  #         rm -rf /tmp/.buildx-cache
+  #         mv /tmp/.buildx-cache-new /tmp/.buildx-cache
 
