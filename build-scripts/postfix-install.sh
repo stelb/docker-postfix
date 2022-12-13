@@ -4,8 +4,9 @@ set -e
 
 do_alpine() {
     apk update
+    apk upgrade
     apk add --upgrade cyrus-sasl cyrus-sasl-static cyrus-sasl-digestmd5 cyrus-sasl-crammd5 cyrus-sasl-login cyrus-sasl-ntlm
-    apk add postfix
+    apk add postfix postfix-pgsql postfix-pcre
     apk add opendkim
     apk add --upgrade ca-certificates tzdata supervisor rsyslog musl musl-utils bash opendkim-utils libcurl jsoncpp lmdb
 }
