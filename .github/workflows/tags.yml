@@ -255,8 +255,9 @@ jobs:
           prerelease: false
 
       - name: Run chart-releaser
-        uses: helm/chart-releaser-action@v1.4.1
+        uses: stefanprodan/helm-gh-pages@v1.4.1
         with:
-          charts_dir: helm
-        env:
-          CR_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          charts_dir: helm/mail
+          app_version: ${{ github.ref_name }}
+          chart_version: ${{ github.ref_name }}
+          token: ${{ secrets.GITHUB_TOKEN }}
