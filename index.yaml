@@ -1,0 +1,21 @@
+apiVersion: v1
+entries:
+  mail:
+  - apiVersion: v2
+    appVersion: v0.0.6
+    created: "2022-12-13T10:35:39.089618332Z"
+    description: An outgoing SMTP mail relay for your applications in Kubernetes cluster
+    digest: a0c9f97fd4c4d962394f90bc0f2e0cd7673e98b4791152cb6fe0204f84fd30e4
+    home: https://github.com/stelb/docker-postfix
+    icon: https://stelb.github.io/docker-postfix/postfix.png
+    maintainers:
+    - name: stelb
+      url: https://github.com/stelb
+    name: mail
+    sources:
+    - https://github.com/stelb/docker-postfix
+    type: application
+    urls:
+    - https://stelb.github.io/docker-postfix/mail-v0.0.6.tgz
+    version: v0.0.6
+generated: "2022-12-13T10:35:39.088384953Z"
